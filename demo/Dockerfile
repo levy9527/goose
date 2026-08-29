@@ -15,7 +15,10 @@
 # ============================================================
 
 # ---- Stage 1: 构建静态二进制（只有这一步需要 Go）----
-FROM golang:1.25-alpine AS build
+# 用镜像源(daocloud)拉取基础镜像，避免 docker hub 在国内连不上
+FROM docker.m.daocloud.io/golang:1.25-alpine AS build
+# 容器内也走 goproxy（goproxy.cn），否则默认 proxy.golang.org 可能拉不下来
+ENV GOPROXY=https://goproxy.cn,direct
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

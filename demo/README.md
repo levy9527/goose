@@ -17,10 +17,13 @@ Postgres.app_user（静态种子数据初始化）
 SQLite.app_user（迁移结果）
    │
    ▼
-HTTP /users/1/posts ──▶ SQLite.post（Go 迁移运行时拉取）
-   │
+SQLite.post 建表（SQL，含列 title）
+   │  Go 迁移运行时拉取填充
    ▼
-SQLite.post.title ────▶ SQLite.post.heading（SQL 迁移重命名列）
+HTTP /users/1/posts ──▶ SQLite.post（title）
+   │  SQL 迁移重命名列（最后一步）
+   ▼
+SQLite.post.heading
 ```
 
 > PG 源库的 `app_user` 数据为**静态种子数据**，初始化时一次性写入（来源已确定），

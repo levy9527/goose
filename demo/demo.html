@@ -130,17 +130,17 @@
     </div>
     <div class="farrow">▼</div>
     <div class="fnode">
-      <span class="ic">🌐</span>
-      <div><div class="lab">HTTP API · /users/1/posts</div><div class="ds">运行时请求，填充 post 表</div></div>
-      <span class="typ go">Go 迁移拉取</span>
-    </div>
-    <div class="farrow">▼</div>
-    <div class="fnode">
       <span class="ic">🗄️</span>
-      <div><div class="lab">SQLite · post（title）</div><div class="ds">Go 代码写入旧列名 title</div></div>
+      <div><div class="lab">SQLite · post 建表</div><div class="ds">先建 post 表（含列 title）</div></div>
       <span class="typ sql">SQL 建表</span>
     </div>
-    <div class="farrow">▼ <span class="fnote">SQL 迁移重命名列 title → heading（必须在拉数之后）</span></div>
+    <div class="farrow">▼ <span class="fnote">Go 迁移运行时拉取并写入</span></div>
+    <div class="fnode">
+      <span class="ic">🌐</span>
+      <div><div class="lab">HTTP API · /users/1/posts ──▶ SQLite.post（title）</div><div class="ds">请求接口，把数据填充进已建好的 post 表</div></div>
+      <span class="typ go">Go 拉取填充</span>
+    </div>
+    <div class="farrow">▼ <span class="fnote">SQL 迁移重命名列 title → heading（最后一步）</span></div>
     <div class="fnode">
       <span class="ic">✅</span>
       <div><div class="lab">SQLite · post（heading）</div><div class="ds">schema 变更完成，数据完整</div></div>

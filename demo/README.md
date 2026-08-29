@@ -82,6 +82,28 @@ export PG_DSN='postgres://postgres:postgres@127.0.0.1:5432/goose_demo?sslmode=di
 
 ---
 
+## 容器化部署（服务器只有 Docker、没有 Go）
+
+Go 编译出来的是**静态二进制**，goose + 你的 Go 迁移 + 驱动全部打包在里面。
+所以 Go 只需要在**构建**时存在（开发机或 CI）；服务器镜像里只有一个二进制，
+**不用装 Go、不用 `go mod download`、不用装依赖**。
+
+```bash
+# 1) 编出静态 Linux 二进制（开发机上执行，CGO_ENABLED=0 确保纯静态）
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o demo-sqlite-linux-arm64 ./demo/runner/sqlite
+
+# 2) 打包进镜像（运行镜像只有二进制 + 迁移 .sql 文件）
+docker build -t goose-demo .
+docker run --rm \
+  -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
+  --add-host=host.docker.internal:host-gateway \
+  goose-demo sqlite up
+```
+
+参考 `demo/Dockerfile`（多阶段构建：构建阶段才用 Go，运行时镜像不含 Go）。
+
+---
+
 ## 为什么用 `runner`（goose 当库），而不是 goose CLI？
 
 goose CLI 只能执行**已编译进二进制的** Go migration；`-dir` 里未注册的 `.go` 文件会直接报错。

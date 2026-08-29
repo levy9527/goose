@@ -1,10 +1,12 @@
-// Package api contains the "complex Go code" this demo automates:
-// hitting the jsonplaceholder HTTP API, decoding JSON, and writing rows.
+// Package api contains the "complex Go code" this demo automates: hitting the
+// jsonplaceholder HTTP API, decoding JSON, and writing rows.
 //
-// The same functions are reused in three places:
-//   - a Postgres migration (seed app_user from /users)
+// It is used by:
 //   - a SQLite migration (fill post from /users/1/posts)
 //   - the "bad" non-automated demo (which runs out of order and fails)
+//
+// The Postgres app_user table is NOT seeded from here: it is initialized once
+// with hardcoded data (see pg_migrations/*_seed_app_user.sql).
 package api
 
 import (
@@ -16,20 +18,9 @@ import (
 	"time"
 )
 
-const (
-	UsersURL = "https://jsonplaceholder.typicode.com/users"
-	PostsURL = "https://jsonplaceholder.typicode.com/users/1/posts"
-)
+const PostsURL = "https://jsonplaceholder.typicode.com/users/1/posts"
 
 var client = &http.Client{Timeout: 20 * time.Second}
-
-type User struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Website  string `json:"website"`
-}
 
 type Post struct {
 	UserID int    `json:"userId"`
@@ -43,54 +34,25 @@ type execable interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-func getJSON(ctx context.Context, url string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// FetchPosts GET /users/1/posts and decodes the response.
+func FetchPosts(ctx context.Context) ([]Post, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, PostsURL, nil)
 	if err != nil {
-		return fmt.Errorf("new request %s: %w", url, err)
+		return nil, fmt.Errorf("new request %s: %w", PostsURL, err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", url, err)
+		return nil, fmt.Errorf("GET %s: %w", PostsURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: unexpected status %s", url, resp.Status)
+		return nil, fmt.Errorf("GET %s: unexpected status %s", PostsURL, resp.Status)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode %s: %w", url, err)
-	}
-	return nil
-}
-
-// FetchUsers GET /users and decodes the response.
-func FetchUsers(ctx context.Context) ([]User, error) {
-	var users []User
-	if err := getJSON(ctx, UsersURL, &users); err != nil {
-		return nil, err
-	}
-	return users, nil
-}
-
-// FetchPosts GET /users/1/posts and decodes the response.
-func FetchPosts(ctx context.Context) ([]Post, error) {
 	var posts []Post
-	if err := getJSON(ctx, PostsURL, &posts); err != nil {
-		return nil, err
+	if err := json.NewDecoder(resp.Body).Decode(&posts); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", PostsURL, err)
 	}
 	return posts, nil
-}
-
-// InsertUsers inserts users into an app_user table. Uses Postgres ($N) placeholders.
-func InsertUsers(ctx context.Context, exec execable, users []User) error {
-	for _, u := range users {
-		if _, err := exec.ExecContext(ctx,
-			`INSERT INTO app_user (id, name, username, email, website) VALUES ($1,$2,$3,$4,$5)`,
-			u.ID, u.Name, u.Username, u.Email, u.Website,
-		); err != nil {
-			return fmt.Errorf("insert user %d: %w", u.ID, err)
-		}
-	}
-	return nil
 }
 
 // InsertPosts inserts posts into a post table using the ORIGINAL column name

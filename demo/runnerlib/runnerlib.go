@@ -1,13 +1,14 @@
-// Command runner drives goose as a library so it can execute Go migrations.
+// Package runnerlib holds the shared "goose-as-a-library" logic used by the
+// Postgres (source) and SQLite (target) runner entrypoints.
 //
-// Why not the goose CLI? The CLI only runs Go migrations that are already
-// compiled into the binary. Here we import the migration packages (their
-// init() registers each Go migration) and call goose.UpContext, which is the
-// standard goose pattern for Go migrations.
-//
-//   go run ./demo/runner pg up          # prepare Postgres source
-//   go run ./demo/runner sqlite up      # run the PG->SQLite migration demo
-package main
+// It is split into two entrypoints (demo/runner/pg and demo/runner/sqlite)
+// rather than one: each must be a SEPARATE process that imports ONLY its own
+// migration package. goose registers Go migrations in a process-global map
+// (keyed by the numeric version parsed from the calling file name), and
+// running a directory that contains no .go files falls back to including ALL
+// globally-registered Go migrations — so the Postgres run must not import the
+// SQLite migrations package at all.
+package runnerlib
 
 import (
 	"context"
@@ -16,17 +17,14 @@ import (
 	"os"
 
 	"github.com/pressly/goose/v3"
-	_ "github.com/pressly/goose/v3/demo/pg_migrations"
-	_ "github.com/pressly/goose/v3/demo/sqlite_migrations"
-	_ "github.com/jackc/pgx/v5/stdlib" // register "pgx" driver (postgres)
-	_ "modernc.org/sqlite"             // register "sqlite" driver
 )
 
 const sqliteFile = "demo/demo.db"
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `usage: go run ./demo/runner {pg|sqlite} {up|status|show|reset}
-  pg     : Postgres source (prep: create app_user + seed from /users API)
+// Usage prints the shared command-line help.
+func Usage() {
+	fmt.Fprintln(os.Stderr, `usage: go run ./demo/runner/{pg|sqlite} {up|status|show|reset}
+  pg     : Postgres source (prep: create app_user + seed static data)
   sqlite : SQLite target (the actual PG->SQLite migration demo)
 
 commands:
@@ -37,24 +35,8 @@ commands:
 	os.Exit(2)
 }
 
-func main() {
-	if len(os.Args) < 3 {
-		usage()
-	}
-	target, cmd := os.Args[1], os.Args[2]
-	ctx := context.Background()
-
-	switch target {
-	case "pg":
-		runPostgres(ctx, cmd)
-	case "sqlite":
-		runSQLite(ctx, cmd)
-	default:
-		usage()
-	}
-}
-
-func runPostgres(ctx context.Context, cmd string) {
+// RunPostgres prepares the Postgres source database (all SQL migrations).
+func RunPostgres(ctx context.Context, cmd string) {
 	if cmd == "up" || cmd == "reset" {
 		resetPostgresDB(ctx) // drop & recreate so the demo is reproducible
 	}
@@ -64,11 +46,11 @@ func runPostgres(ctx context.Context, cmd string) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		fatal(err)
 	}
-	dir := "demo/pg_migrations"
-	runCommand(ctx, db, dir, cmd, showPostgres)
+	runCommand(ctx, db, "demo/pg_migrations", cmd, showPostgres)
 }
 
-func runSQLite(ctx context.Context, cmd string) {
+// RunSQLite runs the SQLite target migration demo (SQL + Go migrations).
+func RunSQLite(ctx context.Context, cmd string) {
 	if cmd == "up" || cmd == "reset" {
 		_ = os.Remove(sqliteFile) // fresh sqlite db so the demo is reproducible
 	}
@@ -78,8 +60,7 @@ func runSQLite(ctx context.Context, cmd string) {
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		fatal(err)
 	}
-	dir := "demo/sqlite_migrations"
-	runCommand(ctx, db, dir, cmd, showSQLite)
+	runCommand(ctx, db, "demo/sqlite_migrations", cmd, showSQLite)
 }
 
 // runCommand dispatches a goose command, or a custom "show" handler.
@@ -96,7 +77,7 @@ func runCommand(ctx context.Context, db *sql.DB, dir, cmd string, show func(cont
 		show(ctx, db)
 		return
 	default:
-		usage()
+		Usage()
 	}
 	if err != nil {
 		fatal(err)

@@ -97,36 +97,30 @@
   <header class="hero">
     <span class="tag">Goose · Migration Demo</span>
     <h1>Goose 不但能自动化 SQL，<br>还能自动化复杂的 Go 代码</h1>
-    <p class="sub">一个 Postgres → SQLite 的真实迁移场景：建表、联网拉数、跨库搬数据、改表结构，全部装进同一套「有序、可回滚」的迁移管线。</p>
+    <p class="sub">一个 Postgres → SQLite 的真实迁移场景：初始化数据、跨库搬数据、联网拉数、改表结构，全部装进同一套「有序、可回滚」的迁移管线。</p>
     <div class="pills">
       <span class="pill">SQL 迁移</span>
       <span class="pill">Go 迁移</span>
       <span class="pill">跨库数据搬迁</span>
-      <span class="pill">HTTP API 拉取</span>
+      <span class="pill">运行时 HTTP 拉取</span>
       <span class="pill">schema 变更</span>
     </div>
   </header>
 
   <h2><span class="num">01</span>要解决的问题</h2>
-  <p class="lead">数据库迁移往往不只有 SQL：还要联网拉数据、把源库数据搬到目标库、再调整表结构。这些步骤互相依赖，顺序错了就会炸。</p>
+  <p class="lead">数据库迁移往往不只有 SQL：还要把源库数据搬到目标库、联网拉数据、再调整表结构。这些步骤互相依赖，顺序错了就会炸。</p>
   <blockquote>
     传统「只自动化脚本」的工具管不了 Go 代码，于是人肉/脚本只能：先建表 → 先改表 → 最后才单独跑 Go 拉数程序 →
     程序写入的还是旧列名 <code class="inline">title</code> → <span class="bad">插入报错：no such column: title</span>。
   </blockquote>
 
   <h2><span class="num">02</span>数据流总览</h2>
-  <p class="lead">两个数据库各有一套 goose 迁移，Goose 按时间戳顺序统一执行 SQL 与 Go 迁移。</p>
+  <p class="lead">两个数据库各有一套 goose 迁移，Goose 按时间戳顺序统一执行 SQL 与 Go 迁移。PG 源库已用静态种子数据初始化。</p>
   <div class="flow">
     <div class="fnode">
-      <span class="ic">🌐</span>
-      <div><div class="lab">jsonplaceholder /users</div><div class="ds">真实外网 HTTP API</div></div>
-      <span class="typ go">Go 迁移拉取</span>
-    </div>
-    <div class="farrow">▼</div>
-    <div class="fnode">
       <span class="ic">🐘</span>
-      <div><div class="lab">Postgres · app_user</div><div class="ds">源库（准备工作）</div></div>
-      <span class="typ sql">SQL 建表</span>
+      <div><div class="lab">Postgres · app_user</div><div class="ds">源库 · 静态种子数据（初始化时写入）</div></div>
+      <span class="typ sql">SQL 建表 + 种子</span>
     </div>
     <div class="farrow">▼ <span class="fnote">Go 迁移跨库搬数据（PG → SQLite）</span></div>
     <div class="fnode">
@@ -137,7 +131,7 @@
     <div class="farrow">▼</div>
     <div class="fnode">
       <span class="ic">🌐</span>
-      <div><div class="lab">jsonplaceholder /users/1/posts</div><div class="ds">真实外网 HTTP API</div></div>
+      <div><div class="lab">HTTP API · /users/1/posts</div><div class="ds">运行时请求，填充 post 表</div></div>
       <span class="typ go">Go 迁移拉取</span>
     </div>
     <div class="farrow">▼</div>
@@ -160,42 +154,47 @@
   <div class="grid">
     <div class="panel">
       <h3 class="card-t">🐘 Postgres 源库 · <code class="inline">demo/pg_migrations/</code></h3>
-      <p class="small">准备工作：建表 + Go 迁移拉 /users 填充</p>
+      <p class="small">初始化：建表 + 写入静态种子数据（数据来源已在初始化时确定）</p>
       <table>
         <tr><th>文件</th><th>类型</th><th>作用</th></tr>
         <tr><td>create_app_user.sql</td><td class="type-sql">SQL</td><td>建 app_user 表</td></tr>
-        <tr><td>seed_users_from_api.go</td><td class="type-go">Go</td><td>GET /users → 填充 PG</td></tr>
+        <tr><td>seed_app_user.sql</td><td class="type-sql">SQL</td><td>写入 10 条静态种子数据</td></tr>
       </table>
     </div>
     <div class="panel">
       <h3 class="card-t">🗄️ SQLite 目标库 · <code class="inline">demo/sqlite_migrations/</code></h3>
-      <p class="small">正式演示：跨库搬迁 + 拉数 + 改表</p>
+      <p class="small">正式演示：跨库搬迁 + 联网拉数 + 改表</p>
       <table>
         <tr><th>文件</th><th>类型</th><th>作用</th></tr>
         <tr><td>create_app_user.sql</td><td class="type-sql">SQL</td><td>建同构 app_user</td></tr>
         <tr><td>copy_app_user_from_pg.go</td><td class="type-go">Go</td><td>连 PG → 写 SQLite（核心）</td></tr>
         <tr><td>create_post.sql</td><td class="type-sql">SQL</td><td>建 post 表</td></tr>
-        <tr><td>fetch_posts.go</td><td class="type-go">Go</td><td>GET /posts → 填充 post</td></tr>
+        <tr><td>fetch_posts.go</td><td class="type-go">Go</td><td>运行时 GET /posts → 填充 post</td></tr>
         <tr><td>rename_post_title.sql</td><td class="type-sql">SQL</td><td>title → heading</td></tr>
       </table>
     </div>
   </div>
 
-  <h2><span class="num">04</span>核心：Go 迁移跨库搬数据</h2>
-  <p class="lead">一段纯 SQL 脚本表达不了的能力——同时开两个数据库连接，从 Postgres 读、写进 SQLite。</p>
-<pre><code>func upCopyAppUserFromPg(ctx context.Context, tx *sql.Tx) error {
-    pg, err := sql.Open(<span class="hl">"pgx"</span>, pgDSN())   <span class="cmt">// 1. 打开 Postgres 源库</span>
+  <h2><span class="num">04</span>核心：Go 迁移跨库搬数据 + 联网拉数</h2>
+  <p class="lead">两段「纯 SQL 脚本表达不了」的能力——同时开两个数据库连接搬数据，以及运行时调用 HTTP 接口。</p>
+<pre><code><span class="cmt">// A) 跨库搬数据：连 Postgres 读，写进 SQLite（同一迁移事务里）</span>
+func upCopyAppUserFromPg(ctx context.Context, tx *sql.Tx) error {
+    pg, err := sql.Open(<span class="hl">"pgx"</span>, pgDSN())   <span class="cmt">// 打开 Postgres 源库</span>
     defer pg.Close()
     rows, err := pg.QueryContext(ctx,
         `SELECT id, name, username, email, website FROM app_user ORDER BY id`)
-    defer rows.Close()
     for rows.Next() {
-        <span class="cmt">// 2. 逐行写入 SQLite 目标表（同一个 goose 迁移里）</span>
-        tx.ExecContext(ctx,
+        tx.ExecContext(ctx,                        <span class="cmt">// 写入 SQLite 目标表</span>
             `INSERT INTO app_user (id, name, username, email, website)
-             VALUES (?,?,?,?,?)`, id, name, username, email, web)
+             VALUES (?,?,?,?,?)`, ...)
     }
-    <span class="cmt">// 返回 nil → goose 提交事务；返回 err → goose 自动回滚</span>
+    <span class="cmt">// 返回 nil → goose 提交；返回 err → goose 自动回滚</span>
+}
+
+<span class="cmt">// B) 联网拉数：GET /users/1/posts → 解码 JSON → 填充 post 表</span>
+func upFetchPosts(ctx context.Context, tx *sql.Tx) error {
+    posts, err := <span class="hl">api.FetchPosts(ctx)</span>    <span class="cmt">// 运行时 HTTP 请求</span>
+    return <span class="hl">api.InsertPosts(ctx, tx, posts)</span> <span class="cmt">// 写入旧列 title</span>
 }</code></pre>
 
   <h2><span class="num">05</span>好路径 vs 坏路径</h2>
@@ -203,9 +202,9 @@
     <div class="panel">
       <h3 class="card-t ok">✅ 好路径 · Goose 自动化</h3>
       <pre><code><span class="cli">./demo/run_demo.sh</span>
-STEP 1  PG:  建表(SQL) → Go拉/users → 10 个 user
+STEP 1  PG:  建表(SQL) + 静态种子数据(SQL)
 STEP 2  SQLite: 建表 → Go跨库搬PG→SQLite → 建post
-        → Go拉/posts → 重命名列 title→heading
+        → Go拉/posts(运行时HTTP) → 重命名 title→heading
 <span class="ok">✓ 全部成功，顺序由 goose 保证</span></code></pre>
     </div>
     <div class="panel">
@@ -222,16 +221,16 @@ Go 拉数程序最后才跑（仍写旧列 title）
   <h2><span class="num">06</span>实际运行输出</h2>
   <div class="panel">
     <h3 class="card-t">好路径</h3>
-<pre><code><span class="cmt"># PG 源库（goose 自动执行 SQL + Go 迁移）</span>
-OK   ..._create_app_user.sql          (5.58ms)
-OK   ..._seed_users_from_api.go       (949ms)   <span class="cmt"># GET /users → 10 users</span>
+<pre><code><span class="cmt"># PG 源库（全部 SQL 迁移）</span>
+OK   ..._create_app_user.sql          (5.37ms)
+OK   ..._seed_app_user.sql            (8.2ms)     <span class="cmt"># 10 条静态种子数据</span>
 
 <span class="cmt"># SQLite 目标库（正式演示）</span>
 OK   ..._create_app_user.sql
-[goose] copied 10 user(s) from Postgres -> SQLite   <span class="cmt"># 跨库搬迁</span>
+[goose] copied 10 user(s) from Postgres -> SQLite   <span class="cmt"># Go 跨库搬迁</span>
 OK   ..._copy_app_user_from_pg.go
 OK   ..._create_post.sql
-OK   ..._fetch_posts.go               (1.84s)     <span class="cmt"># GET /posts → 10 posts</span>
+OK   ..._fetch_posts.go               (807ms)     <span class="cmt"># Go 运行时 GET /posts</span>
 OK   ..._rename_post_title.sql                     <span class="cmt"># title → heading</span>
 successfully migrated to version: 20260829025001</code></pre>
     <h3 class="card-t" style="margin-top:18px">坏路径（预期失败）</h3>
@@ -244,24 +243,25 @@ successfully migrated to version: 20260829025001</code></pre>
   </div>
 
   <h2><span class="num">07</span>怎么运行</h2>
-  <p class="lead">前提：本机 <code class="inline">127.0.0.1:5432</code> 有可用 Postgres（postgres/postgres），且能访问外网 jsonplaceholder。</p>
+  <p class="lead">前提：本机 <code class="inline">127.0.0.1:5432</code> 有可用 Postgres（postgres/postgres），且能访问外网 jsonplaceholder（post 拉数需联网）。</p>
 <pre><code><span class="cmt"># 好路径（一键演示 goose 自动化）</span>
 <span class="cli">./demo/run_demo.sh</span>
 
 <span class="cmt"># 坏路径（复现非自动化故障）</span>
 <span class="cli">./demo/run_bad.sh</span>
 
-<span class="cmt"># 单步 / 自定义（goose 当库用）</span>
-<span class="cli">go run ./demo/runner pg up</span>        <span class="cmt"># 准备 PG 源库</span>
-<span class="cli">go run ./demo/runner sqlite up</span>     <span class="cmt"># 跑 SQLite 目标库迁移</span>
-<span class="cli">go run ./demo/runner {pg|sqlite} {status|show|reset}</span></code></pre>
+<span class="cmt"># 单步 / 自定义（goose 当库用，两个独立入口）</span>
+<span class="cli">go run ./demo/runner/pg up</span>          <span class="cmt"># 准备 PG 源库</span>
+<span class="cli">go run ./demo/runner/sqlite up</span>       <span class="cmt"># 跑 SQLite 目标库迁移</span>
+<span class="cli">go run ./demo/runner/{pg|sqlite} {status|show|reset}</span></code></pre>
   <p class="small">连接串可用环境变量覆盖：<code class="inline">PG_DSN</code>、<code class="inline">PG_SUPER_DSN</code>。每次 <code class="inline">up</code> 会重建数据库，可反复演示。</p>
 
   <h2><span class="num">08</span>几个关键实现点</h2>
   <div class="panel">
     <table>
       <tr><th>问题</th><th>做法</th></tr>
-      <tr><td>goose CLI 不能执行 .go 迁移</td><td>CLI 只认<b>编译进二进制</b>的 Go 迁移，<code class="inline">-dir</code> 里未注册的 .go 会报错 → 用 <code class="inline">runner</code>（goose 当库）import 迁移包触发 <code class="inline">init()</code> 注册，再调 <code class="inline">goose.UpContext</code></td></tr>
+      <tr><td>goose CLI 不能执行 .go 迁移</td><td>CLI 只认<b>编译进二进制</b>的 Go 迁移，<code class="inline">-dir</code> 里未注册的 .go 会报错 → 用 <code class="inline">runnerlib</code>（goose 当库）import 迁移包触发 <code class="inline">init()</code> 注册，再调 <code class="inline">goose.UpContext</code></td></tr>
+      <tr><td>PG/SQLite 分两个入口</td><td>goose 的 Go 迁移注册在<b>进程全局</b> map；若目录里没有 .go 文件，goose 会回退灌入全部已注册 Go 迁移。所以 PG（纯 SQL）与 SQLite（含 Go）必须各自独立进程，PG 入口不 import SQLite 迁移包</td></tr>
       <tr><td>SQLite 驱动</td><td><code class="inline">modernc.org/sqlite</code>（纯 Go、无 cgo），无需额外编译</td></tr>
       <tr><td>PG 驱动</td><td><code class="inline">jackc/pgx/v5/stdlib</code>，注册 <code class="inline">pgx</code> 驱动</td></tr>
       <tr><td>可重复演示</td><td>每次 <code class="inline">up</code> <code class="inline">DROP+CREATE</code> PG 库 / 删除 SQLite 文件</td></tr>

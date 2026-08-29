@@ -11,19 +11,28 @@
 ## 场景
 
 ```
-jsonplaceholder /users ──────────▶ PG.app_user        （准备工作，Go 迁移拉数据）
-PG.app_user ────────────────────▶ SQLite.app_user     （跨库迁移，Go 迁移搬数据）
-jsonplaceholder /users/1/posts ─▶ SQLite.post         （Go 迁移拉数据）
-SQLite.post.title ─────────────▶ SQLite.post.heading  （SQL 迁移改表：重命名列）
+Postgres.app_user（静态种子数据初始化）
+   │  Go 迁移跨库搬数据
+   ▼
+SQLite.app_user（迁移结果）
+   │
+   ▼
+HTTP /users/1/posts ──▶ SQLite.post（Go 迁移运行时拉取）
+   │
+   ▼
+SQLite.post.title ────▶ SQLite.post.heading（SQL 迁移重命名列）
 ```
+
+> PG 源库的 `app_user` 数据为**静态种子数据**，初始化时一次性写入（来源已确定），
+> 演示运行时不再请求。仅 `post` 表的填充保留**运行时 HTTP**（Go 迁移）。
 
 两个数据库各有一套 goose 迁移（文件名是 `goose create` 生成的**时间戳**，天然避免多人协作的序号冲突）：
 
-**`demo/pg_migrations/` —— Postgres 源库（准备工作）**
+**`demo/pg_migrations/` —— Postgres 源库（准备工作，全 SQL）**
 | 文件 | 类型 | 作用 |
 |---|---|---|
 | `*_create_app_user.sql` | SQL | 建 `app_user` 表 |
-| `*_seed_users_from_api.go` | **Go** | HTTP GET `/users` → 反序列化 → 填充 PG |
+| `*_seed_app_user.sql` | SQL | 写入 10 条静态种子数据 |
 
 **`demo/sqlite_migrations/` —— SQLite 目标库（正式演示）**
 | 文件 | 类型 | 作用 |
@@ -31,7 +40,7 @@ SQLite.post.title ─────────────▶ SQLite.post.heading
 | `*_create_app_user.sql` | SQL | 建同构 `app_user` |
 | `*_copy_app_user_from_pg.go` | **Go** | 连 PG → 读全部 user → 写进 SQLite（核心）|
 | `*_create_post.sql` | SQL | 建 `post` 表 |
-| `*_fetch_posts.go` | **Go** | HTTP GET `/users/1/posts` → 填充 `post`（写旧列 `title`）|
+| `*_fetch_posts.go` | **Go** | 运行时 GET `/users/1/posts` → 填充 `post`（写旧列 `title`）|
 | `*_rename_post_title.sql` | SQL | `ALTER TABLE post RENAME COLUMN title TO heading` |
 
 > 关键点：`fetch_posts` 写入的是旧列名 `title`，而 `rename` 把它改成了 `heading`。
@@ -41,8 +50,8 @@ SQLite.post.title ─────────────▶ SQLite.post.heading
 
 ## 运行
 
-前提：本机 127.0.0.1:5432 有可用的 Postgres（用户/密码 `postgres/postgres`），且能访问外网
-（jsonplaceholder）。连接串可用环境变量覆盖：
+前提：本机 127.0.0.1:5432 有可用的 Postgres（用户/密码 `postgres/postgres`），
+且能访问外网 jsonplaceholder（post 拉数需联网）。连接串可用环境变量覆盖：
 
 ```bash
 export PG_DSN='postgres://postgres:postgres@127.0.0.1:5432/goose_demo?sslmode=disable'
@@ -55,8 +64,8 @@ export PG_DSN='postgres://postgres:postgres@127.0.0.1:5432/goose_demo?sslmode=di
 ```
 
 它依次：
-1. `go run ./demo/runner pg up` —— 重建 PG 库并跑迁移（SQL 建表 + Go 拉 `/users` 填充）。
-2. `go run ./demo/runner sqlite up` —— 重建 SQLite 库并跑迁移：建表 → **Go 跨库搬数据** → 建 post → Go 拉 `/posts` → 重命名列。
+1. `go run ./demo/runner/pg up` —— 重建 PG 库并跑迁移（SQL 建表 + SQL 静态种子）。
+2. `go run ./demo/runner/sqlite up` —— 重建 SQLite 库并跑迁移：建表 → **Go 跨库搬数据** → 建 post → Go 运行时拉 `/posts` → 重命名列。
 3. 打印两个库最终的数据，证明全部成功。
 
 ### 坏路径（非自动化：脚本/人肉先改表，Go 代码最后跑）
@@ -70,16 +79,20 @@ export PG_DSN='postgres://postgres:postgres@127.0.0.1:5432/goose_demo?sslmode=di
 
 ---
 
-## 为什么不用 goose CLI，而用 `runner`？
+## 为什么用 `runner`（goose 当库），而不是 goose CLI？
 
 goose CLI 只能执行**已编译进二进制的** Go migration；`-dir` 里未注册的 `.go` 文件会直接报错。
 所以官方跑 Go migration 的标准姿势是「goose 当库用」：写一个很小的 main，**import 迁移包**（触发
 `init()` 注册），再调用 `goose.UpContext(db, dir)`。
 
-`demo/runner/main.go` 就是这个 runner，支持：
+注意 goose 的 Go 迁移注册在**进程全局** map：若某个目录里没有 `.go` 文件，goose 会回退把
+**全部已注册 Go 迁移**都塞进去。因此 PG（纯 SQL）与 SQLite（含 Go）拆成两个独立入口，
+PG 入口不 import SQLite 迁移包：
 
 ```bash
-go run ./demo/runner {pg|sqlite} {up|status|show|reset}
+go run ./demo/runner/pg up          # PG 源库（纯 SQL）
+go run ./demo/runner/sqlite up      # SQLite 目标库（SQL + Go）
+go run ./demo/runner/{pg|sqlite} {up|status|show|reset}
 ```
 
 ---
@@ -89,10 +102,13 @@ go run ./demo/runner {pg|sqlite} {up|status|show|reset}
 ```
 demo/
   api/api.go                  # 共享“复杂 Go 代码”：HTTP 拉取 + 解码 + 插入
-  pg_migrations/              # Postgres 源库迁移（准备）
-  sqlite_migrations/          # SQLite 目标库迁移（正式演示）
-  runner/main.go              # goose 当库用的迁移执行器
+  pg_migrations/              # Postgres 源库迁移（全 SQL，含静态种子）
+  sqlite_migrations/          # SQLite 目标库迁移（SQL + Go）
+  runnerlib/runnerlib.go      # goose 当库用的共享执行逻辑
+  runner/pg/main.go           # PG 源库入口（不 import SQLite 迁移）
+  runner/sqlite/main.go       # SQLite 目标库入口（import SQLite 迁移）
   bad/main.go                 # 非自动化坏路径复现程序
   run_demo.sh                 # 好路径一键运行
   run_bad.sh                  # 坏路径一键运行
+  demo.html                   # HTML 版演示说明（浏览器直接打开）
 ```

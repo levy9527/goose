@@ -43,7 +43,7 @@ SQLite.post.heading
 | `*_create_app_user.sql` | SQL | 建同构 `app_user` |
 | `*_copy_app_user_from_pg.go` | **Go** | 连 PG → 读全部 user → 写进 SQLite（核心）|
 | `*_create_post.sql` | SQL | 建 `post` 表 |
-| `*_fetch_posts.go` | **Go** | 运行时 GET `/users/1/posts` → 填充 `post`（写旧列 `title`）|
+| `*_fetch_posts.go` | **Go**（NoTx 事务外）| 运行时 GET `/users/1/posts` → 填充 `post`（写旧列 `title`）|
 | `*_rename_post_title.sql` | SQL | `ALTER TABLE post RENAME COLUMN title TO heading` |
 
 > 关键点：`fetch_posts` 写入的是旧列名 `title`，而 `rename` 把它改成了 `heading`。

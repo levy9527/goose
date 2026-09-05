@@ -169,7 +169,7 @@
         <tr><td>create_app_user.sql</td><td class="type-sql">SQL</td><td>建同构 app_user</td></tr>
         <tr><td>copy_app_user_from_pg.go</td><td class="type-go">Go</td><td>连 PG → 写 SQLite（核心）</td></tr>
         <tr><td>create_post.sql</td><td class="type-sql">SQL</td><td>建 post 表</td></tr>
-        <tr><td>fetch_posts.go</td><td class="type-go">Go</td><td>运行时 GET /posts → 填充 post</td></tr>
+        <tr><td>fetch_posts.go</td><td class="type-go">Go · NoTx</td><td>运行时 GET /posts → 填充 post（事务外，因含网络 I/O）</td></tr>
         <tr><td>rename_post_title.sql</td><td class="type-sql">SQL</td><td>title → heading</td></tr>
       </table>
     </div>

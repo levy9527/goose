@@ -100,7 +100,31 @@ docker run --rm \
   goose-demo sqlite up
 ```
 
-参考 `demo/Dockerfile`（多阶段构建：构建阶段才用 Go，运行时镜像不含 Go）。
+### 两种镜像（均已本机构建验证，最终镜像无 Go）
+
+**① 多阶段构建 `demo/Dockerfile`**（构建阶段用 golang 镜像现场编译）：
+```bash
+# 国内需用 daocloud 镜像源(基础镜像) + goproxy.cn(Go 依赖)，Dockerfile 已内置
+docker build -f demo/Dockerfile -t goose-demo .
+
+# 运行 SQLite 目标库迁移（连宿主 PG，拉 /posts 需外网）
+docker run --rm -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
+  --add-host=host.docker.internal:host-gateway goose-demo up
+```
+
+**② 运行时验证镜像 `demo/Dockerfile.runtime`**（用预编译静态二进制，最快）：
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/demo-sqlite-linux-arm64 ./demo/runner/sqlite
+docker build -f demo/Dockerfile.runtime -t goose-demo-runtime .
+docker run --rm -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
+  --add-host=host.docker.internal:host-gateway goose-demo-runtime up
+```
+
+> 注意：每次 `docker run` 是临时容器，`up` 建的 `demo/demo.db` 不持久化。要看数据就
+> `up`、`show` 放同一个容器（`--entrypoint sh -c "demo-sqlite up && demo-sqlite show"`），
+> 或挂 volume 持久化。
+>
+> 国内网络：基础镜像用 `docker.m.daocloud.io` 源（golang/alpine），Go 依赖走 `GOPROXY=goproxy.cn`。
 
 ---
 

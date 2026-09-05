@@ -192,9 +192,11 @@ func upCopyAppUserFromPg(ctx context.Context, tx *sql.Tx) error {
 }
 
 <span class="cmt">// B) 联网拉数：GET /users/1/posts → 解码 JSON → 填充 post 表</span>
-func upFetchPosts(ctx context.Context, tx *sql.Tx) error {
-    posts, err := <span class="hl">api.FetchPosts(ctx)</span>    <span class="cmt">// 运行时 HTTP 请求</span>
-    return <span class="hl">api.InsertPosts(ctx, tx, posts)</span> <span class="cmt">// 写入旧列 title</span>
+<span class="cmt">// 用 NoTx(事务外)注册：HTTP 可能耗时几百 ms，别让网络往返挂住写事务/锁</span>
+goose.AddMigrationNoTxContext(upFetchPosts, downFetchPosts)
+func upFetchPosts(ctx context.Context, db *sql.DB) error {   <span class="cmt">// NoTx 收到 *sql.DB</span>
+    posts, err := <span class="hl">api.FetchPosts(ctx)</span>    <span class="cmt">// 运行时 HTTP 请求(事务外)</span>
+    return <span class="hl">api.InsertPosts(ctx, db, posts)</span> <span class="cmt">// 写入旧列 title</span>
 }</code></pre>
 
   <h2><span class="num">05</span>好路径 vs 坏路径</h2>

@@ -7,8 +7,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/pressly/goose/v3/demo/runnerlib"
 	_ "github.com/jackc/pgx/v5/stdlib" // register "pgx" driver (postgres)
+	"github.com/pressly/goose/v3/demo/runnerlib"
 )
 
 func main() {

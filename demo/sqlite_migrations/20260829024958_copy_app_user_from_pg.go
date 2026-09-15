@@ -49,7 +49,7 @@ func upCopyAppUserFromPg(ctx context.Context, tx *sql.Tx) error {
 	var count int
 	for rows.Next() {
 		var (
-			id                        int
+			id                         int
 			name, username, email, web string
 		)
 		if err := rows.Scan(&id, &name, &username, &email, &web); err != nil {

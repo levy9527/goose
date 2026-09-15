@@ -4,14 +4,13 @@
 # 关键：Go 编译出的是静态二进制，goose + Go 迁移 + 驱动全部打进二进制。
 # 构建阶段才需要 Go；运行镜像里只需一个二进制文件 + 迁移 .sql 文件。
 #
-# 构建：
-#   docker build -t goose-demo .
-# 运行（以 SQLite 目标库为例，up 命令）：
-#   docker run --rm -v goose_demo_pg 需要时用 --add-host 连 PG，见下：
+# 构建（-f 指定本文件，构建上下文仍是仓库根）：
+#   docker build -f demo/Dockerfile -t goose-demo .
+# 运行（以 SQLite 目标库的 up 命令为例）：
 #   docker run --rm \
 #     -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
 #     --add-host=host.docker.internal:host-gateway \
-#     goose-demo sqlite up
+#     goose-demo up
 # ============================================================
 
 # ---- Stage 1: 构建静态二进制（只有这一步需要 Go）----
@@ -28,7 +27,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -o /out/demo-sqlite ./demo/runner/sqlite
 
 # ---- Stage 2: 运行时镜像（无 Go、无依赖安装）----
-FROM alpine:3.20
+# 与 Stage 1 一致走 daocloud 镜像源，避免 docker hub 连不上
+FROM docker.m.daocloud.io/alpine:3.20
 # HTTPS 请求(拉 /posts)需要 CA 证书；这也是运行时唯一装的包
 RUN apk add --no-cache ca-certificates
 

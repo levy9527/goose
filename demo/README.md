@@ -88,17 +88,14 @@ Go 编译出来的是**静态二进制**，goose + 你的 Go 迁移 + 驱动全�
 所以 Go 只需要在**构建**时存在（开发机或 CI）；服务器镜像里只有一个二进制，
 **不用装 Go、不用 `go mod download`、不用装依赖**。
 
-```bash
-# 1) 编出静态 Linux 二进制（开发机上执行，CGO_ENABLED=0 确保纯静态）
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o demo-sqlite-linux-arm64 ./demo/runner/sqlite
+静态二进制统一输出到 `bin/`（该目录已被 `.gitignore` 忽略）：
 
-# 2) 打包进镜像（运行镜像只有二进制 + 迁移 .sql 文件）
-docker build -t goose-demo .
-docker run --rm \
-  -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
-  --add-host=host.docker.internal:host-gateway \
-  goose-demo sqlite up
+```bash
+# 编出静态 Linux 二进制（在开发机上执行，CGO_ENABLED=0 确保纯静态）
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/demo-sqlite-linux-arm64 ./demo/runner/sqlite
 ```
+
+两种镜像（见下）都用 `-f demo/Dockerfile*` 构建，**构建上下文仍是仓库根**，运行镜像里只有二进制 + 迁移 `.sql`。
 
 ### 两种镜像（均已本机构建验证，最终镜像无 Go）
 
@@ -114,7 +111,7 @@ docker run --rm -e PG_DSN='postgres://postgres:postgres@host.docker.internal:543
 
 **② 运行时验证镜像 `demo/Dockerfile.runtime`**（用预编译静态二进制，最快）：
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/demo-sqlite-linux-arm64 ./demo/runner/sqlite
+# 二进制已由上面那条 go build 产出到 bin/demo-sqlite-linux-arm64
 docker build -f demo/Dockerfile.runtime -t goose-demo-runtime .
 docker run --rm -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
   --add-host=host.docker.internal:host-gateway goose-demo-runtime up
@@ -157,7 +154,17 @@ demo/
   runner/pg/main.go           # PG 源库入口（不 import SQLite 迁移）
   runner/sqlite/main.go       # SQLite 目标库入口（import SQLite 迁移）
   bad/main.go                 # 非自动化坏路径复现程序
+  Dockerfile                  # 多阶段构建镜像（构建期编译，运行期无 Go）
+  Dockerfile.runtime          # 运行时验证镜像（直接用 bin/ 里预编译二进制）
   run_demo.sh                 # 好路径一键运行
   run_bad.sh                  # 坏路径一键运行
   demo.html                   # HTML 版演示说明（浏览器直接打开）
+```
+
+编译产物统一放 `bin/`（已被 gitignore，不提交）：
+
+```
+bin/
+  demo-sqlite-linux-arm64     # Dockerfile.runtime 使用的 Linux 静态二进制
+  goose                       # 本地构建的 goose CLI
 ```

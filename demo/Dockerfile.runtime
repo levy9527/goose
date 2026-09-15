@@ -14,7 +14,8 @@
 #     --add-host=host.docker.internal:host-gateway goose-demo-runtime up
 # ============================================================
 
-FROM alpine:3.20
+# 与 demo/Dockerfile 一致走 daocloud 镜像源，避免 docker hub 连不上
+FROM docker.m.daocloud.io/alpine:3.20
 RUN apk add --no-cache ca-certificates   # HTTPS 拉数据需要 CA 证书
 
 COPY bin/demo-sqlite-linux-arm64 /usr/local/bin/demo-sqlite

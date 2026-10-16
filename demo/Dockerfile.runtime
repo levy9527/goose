@@ -1,0 +1,26 @@
+# ============================================================
+# Goose 演示 · 运行时验证镜像（无 Go）
+#
+# 这个镜像不含 Go：直接用已编好的静态 Linux 二进制 + 迁移 .sql 文件。
+# 验证点：静态二进制在容器里直接跑迁移，无需 Go 环境/依赖安装。
+#
+# 前提：bin/demo-sqlite-linux-arm64 已存在
+#   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/demo-sqlite-linux-arm64 ./demo/runner/sqlite
+#
+# 构建：
+#   docker build -f demo/Dockerfile.runtime -t goose-demo-runtime .
+# 运行（SQLite 目标库迁移，连宿主 PG）：
+#   docker run --rm -e PG_DSN='postgres://postgres:postgres@host.docker.internal:5432/goose_demo?sslmode=disable' \
+#     --add-host=host.docker.internal:host-gateway goose-demo-runtime up
+# ============================================================
+
+# 与 demo/Dockerfile 一致走 daocloud 镜像源，避免 docker hub 连不上
+FROM docker.m.daocloud.io/alpine:3.20
+RUN apk add --no-cache ca-certificates   # HTTPS 拉数据需要 CA 证书
+
+COPY bin/demo-sqlite-linux-arm64 /usr/local/bin/demo-sqlite
+COPY demo/sqlite_migrations /app/demo/sqlite_migrations
+
+WORKDIR /app
+ENTRYPOINT ["demo-sqlite"]
+CMD ["up"]

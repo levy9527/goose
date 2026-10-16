@@ -15,6 +15,10 @@ coverage.html
 .envrc
 *.FAIL
 
+# Demo generated databases
+demo/*.db
+/scratch.db
+
 dist/
 release_notes.txt
 

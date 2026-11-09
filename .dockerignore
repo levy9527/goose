@@ -1,0 +1,18 @@
+# 编译产物（91M，进构建上下文只会拖慢 build）
+/bin
+
+# 本地/演示产生的数据库与日志
+*.db
+*.db-journal
+*.log
+scratch.db
+
+# 编辑器与本地工具
+.idea
+.vscode
+.pi
+.DS_Store
+*.swp
+
+# demo 里的大块文档/网页不需进镜像
+demo/_scratch

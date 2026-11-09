@@ -1,0 +1,56 @@
+# check=skip=FromPlatformFlagConstDisallowed
+# syntax=docker/dockerfile:1
+# （上面那行关掉了 docker 对「FROM --platform 用常量」的告警：架构锁死是刻意的）
+# ============================================================
+# 通用 goose 迁移镜像 · linux/amd64
+#
+# 不需要 buildx、不需要 --push、不需要 registry：普通 docker build 即可。
+# 目标架构由文件名决定，与构建机架构无关（在 arm Mac 上也能编出 amd64 镜像）。
+#
+#   docker build -f Dockerfile.amd64 -t goose:amd64 .
+#   docker build -f Dockerfile.arm64 -t goose:arm64 .
+#
+# 运行（migrations 用 volume 挂进来，工作目录固定 /migrations）：
+#   docker run --rm -v "$PWD/migrations:/migrations" \
+#     -e GOOSE_DRIVER=postgres \
+#     -e GOOSE_DBSTRING='postgres://user:pass@host:5432/db?sslmode=disable' \
+#     goose:amd64 up
+#
+# 版本号：构建期没有 git，默认 dev；要真实版本就传
+#   --build-arg GOOSE_VERSION=$(git describe --tags --always)
+# ============================================================
+
+ARG GO_VERSION=1.26
+ARG ALPINE_VERSION=3.20
+
+# ---- Stage 1: 交叉编译 ----
+# --platform=$BUILDPLATFORM：编译始终跑在构建机原生架构上（不靠 qemu），
+# 只把产物 GOARCH 交叉到目标架构。
+FROM --platform=$BUILDPLATFORM docker.m.daocloud.io/golang:${GO_VERSION}-alpine AS build
+
+ARG GOOSE_VERSION=dev
+
+ENV GOPROXY=https://goproxy.cn,direct \
+    CGO_ENABLED=0
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# 编译规则（tag 裁剪、ldflags、输出路径）只写在 build-pg-goose.sh 一处，
+# Dockerfile.arm64 复用同一脚本，避免两边漂移。
+RUN VERSION="$GOOSE_VERSION" sh ./build-pg-goose.sh amd64
+
+# ---- Stage 2: 运行时镜像（架构锁死，跟构建机无关）----
+FROM --platform=linux/amd64 docker.m.daocloud.io/alpine:${ALPINE_VERSION}
+
+# 连 https 的库（含云上 PG）需要 CA 证书，这也是运行时唯一要装的包
+RUN apk add --no-cache ca-certificates
+
+COPY --from=build /src/bin/goose-linux-amd64 /usr/local/bin/goose
+
+# 迁移脚本挂到这里，镜像里不含任何 .sql
+WORKDIR /migrations
+
+ENTRYPOINT ["goose"]
